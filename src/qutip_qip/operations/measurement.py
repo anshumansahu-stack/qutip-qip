@@ -1,7 +1,7 @@
 import numpy as np
 import warnings
 import qutip
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from qutip import basis, Qobj
 from qutip.measurement import measurement_statistics
 from qutip_qip.operations import expand_operator
@@ -9,7 +9,16 @@ from qutip_qip.operations import expand_operator
 __all__ = ["Mz", "Mx", "My"]
 
 
-class Measurement(ABC):
+class _MeasurementMetaClass(ABCMeta):
+    def __repr__(cls) -> str:
+        name = getattr(cls, "name", cls.__name__)
+        return f"Measurement({name})"
+
+    def __str__(cls) -> str:
+        return repr(cls)
+
+
+class Measurement(ABC, metaclass=_MeasurementMetaClass):
     """
     Base class for quantum measurements.
     """
@@ -22,7 +31,7 @@ class Measurement(ABC):
             warnings.warn(
                 "Direct instantiation of Measurement() is deprecated and will "
                 "be removed in future versions. Please use a specific subclass "
-                "like 'Mz()' instead.",
+                "like 'Mz' instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -65,7 +74,7 @@ class Measurement(ABC):
         warnings.warn(
             "'measurement_comp_basis' has been deprecated and will be removed "
             "in future versions. Please use 'get_measurement_ops()' combined "
-            "with simulator logic, or the upcoming 'apply()' method.",
+            "with simulator logic.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -92,7 +101,7 @@ class Measurement(ABC):
 
     def __str__(self):
         if self.name:
-            return f" Measurement({self.name})"
+            return f"Measurement({self.name})"
         return "Measurement"
 
     def __repr__(self):

@@ -340,7 +340,7 @@ class CircuitSimulator:
         """
         current_state = self.state
         n = self.qc.num_qubits
-        if issubclass(operation, Measurement):
+        if isinstance(operation, type) and issubclass(operation, Measurement):
             operation = operation()
         raw_ops = operation.get_measurement_ops()
         measurement_ops = [
