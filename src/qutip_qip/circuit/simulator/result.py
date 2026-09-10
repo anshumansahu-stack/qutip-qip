@@ -1,0 +1,184 @@
+from qutip import Qobj
+import warnings
+
+
+class CircuitResult:
+    """
+    Result of a quantum circuit simulation.
+    """
+
+    def __init__(self, final_states, probabilities, cbits=None):
+        """
+        Store result of CircuitSimulator.
+
+        Parameters
+        ----------
+        final_states: list of Qobj.
+            List of output kets or density matrices.
+
+        probabilities: list of float.
+            List of probabilities of obtaining each output state.
+
+        cbits: list of list of int, optional
+            List of cbits for each output.
+        """
+
+        if isinstance(final_states, Qobj) or final_states is None:
+            self.final_states = [final_states]
+            self.probabilities = [probabilities]
+            self.cbits = []
+            if cbits:
+                self.cbits = [cbits]
+        else:
+            inds = list(
+                filter(
+                    lambda x: final_states[x] is not None,
+                    range(len(final_states)),
+                )
+            )
+            self.final_states = [final_states[i] for i in inds]
+            self.probabilities = [probabilities[i] for i in inds]
+            if cbits:
+                self.cbits = [cbits[i] for i in inds]
+
+    def get_final_states(self, index=None):
+        """
+        Return list of output states.
+
+        Parameters
+        ----------
+        index: int
+            Indicates i-th state to be returned.
+
+        Returns
+        -------
+        final_states: Qobj or list of Qobj.
+            List of output kets or density matrices.
+        """
+
+        if index is not None:
+            return self.final_states[index]
+        return self.final_states
+
+    def get_probabilities(self, index=None):
+        """
+        Return list of probabilities corresponding to the output states.
+
+        Parameters
+        ----------
+        index: int
+            Indicates i-th probability to be returned.
+
+        Returns
+        -------
+        probabilities: float or list of float
+            Probabilities associated with each output state.
+        """
+
+        if index is not None:
+            return self.probabilities[index]
+        return self.probabilities
+
+    def get_cbits(self, index=None):
+        """
+        Return list of classical bit outputs corresponding to the results.
+
+        Parameters
+        ----------
+        index: int
+            Indicates i-th output, probability pair to be returned.
+
+        Returns
+        -------
+        cbits: list of int or list of list of int
+            list of classical bit outputs
+        """
+
+        if index is not None:
+            return self.cbits[index]
+        return self.cbits
+
+    def plot_histogram(
+        self,
+        fig: "matplotlib.figure.Figure | None" = None,
+        ax: "matplotlib.axes.Axes | None" = None,
+        color: str = "#1f77b4",
+        top_m: int | None = None,
+        threshold: float = 1e-10,
+    ) -> "tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]":
+        """
+        Plot a histogram of the measurement outcomes and their probabilities.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure, optional
+            The figure object for the histogram plot. If not provided, a new figure will be created.
+
+        ax : matplotlib.axes.Axes, optional
+            The axes object for the histogram plot. If not provided, a new axes will be created.
+
+        color : str, optional
+            Bar color for the histogram. Default is '#1f77b4'.
+
+        top_m : int, optional
+            The number of top m highest probability measurements to be plotted in the histogram. If not specified, defaults to all the measurements above the mentioned tolerance.
+
+        threshold : float, optional
+            The probability e.g. 1e-7 above which the measurements are plotted in the histogram. If not specified, defaults to 1e-10.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The figure object for the histogram plot.
+
+        ax : matplotlib.axes.Axes
+            The axes object for the histogram plot.
+        """
+
+        import matplotlib.pyplot as plt
+
+        # Check if classical bits exist, are not empty, and are not just [None]
+        if not hasattr(self, "cbits") or not self.cbits or self.cbits[0] is None:
+            raise ValueError(
+                "Cannot plot histogram: No classical measurement results are available."
+            )
+
+        num_cbits = len(self.cbits[0])
+
+        plot_dict = {}
+
+        for cbits, prob in zip(self.cbits, self.probabilities):
+            if prob > threshold:
+                binary = "".join(str(b) for b in cbits)
+                plot_dict[binary] = prob
+
+        plot_dict = dict(
+            sorted(plot_dict.items(), key=lambda item: item[1], reverse=True)
+        )
+
+        if top_m != None and top_m < len(plot_dict):
+            plot_dict = dict(list(plot_dict.items())[:top_m])
+
+        ## No Measured values
+        if len(plot_dict) == 0:
+            warnings.warn(
+                "No entries qualified to be plotted! Plotting empty Histogram..."
+            )
+
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+
+        ax.bar(
+            plot_dict.keys(),
+            plot_dict.values(),
+            color=color,
+            edgecolor="black",
+            zorder=3,
+        )
+        ax.set_xlabel("Classical Register State")
+        ax.set_ylabel("Probability")
+        ax.set_title("Measurement Histogram")
+        ax.set_ylim(0, 1)
+        ax.grid(axis="y", linestyle="--", alpha=0.7, zorder=0)
+
+        return fig, ax

@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 import qutip
-from qutip_qip.device import Processor, LinearSpinChain
 from qutip import (
     basis,
     sigmaz,
@@ -17,11 +16,13 @@ from qutip import (
     rand_dm,
     fidelity,
 )
-from qutip_qip.operations import hadamard_transform
-from qutip_qip.noise import DecoherenceNoise, RandomNoise, ControlAmpNoise
-from qutip_qip.qubits import qubit_states
-from qutip_qip.pulse import Pulse
 from qutip_qip.circuit import QubitCircuit
+from qutip_qip.device import Processor, LinearSpinChain
+from qutip_qip.operations import hadamard_transform
+from qutip_qip.operations.gates import ISWAP, X
+from qutip_qip.noise import DecoherenceNoise, RandomNoise, ControlAmpNoise
+from qutip_qip.pulse import Pulse
+from qutip_qip.qubits import qubit_states
 
 
 class TestCircuitProcessor:
@@ -66,10 +67,7 @@ class TestCircuitProcessor:
         amp2 = np.arange(5, 0, -1)
 
         proc.set_all_coeffs(
-            {
-                label: amp
-                for label, amp in zip(proc.get_control_labels(), [amp1, amp2])
-            }
+            {label: amp for label, amp in zip(proc.get_control_labels(), [amp1, amp2])}
         )
         proc.set_all_tlist(tlist)
         proc.save_coeff("qutip_test_CircuitProcessor.txt")
@@ -92,13 +90,9 @@ class TestCircuitProcessor:
         init_state = rand_ket(2)
         tlist = [0.0, 1.0, 2.0]
         proc.add_pulse(Pulse(identity(2), 0, tlist, False))
-        result = proc.run_state(
-            init_state, options={"store_final_state": True}
-        )
+        result = proc.run_state(init_state, options={"store_final_state": True})
         global_phase = init_state[0, 0] / result.final_state[0, 0]
-        assert_allclose(
-            global_phase * result.final_state.full(), init_state.full()
-        )
+        assert_allclose(global_phase * result.final_state.full(), init_state.full())
 
     def test_id_with_T1_T2(self):
         """
@@ -151,8 +145,7 @@ class TestCircuitProcessor:
             result.expect[0][-1],
             np.exp(-1.0 / t2 * end_time) * 0.5 + 0.5,
             rtol=1e-5,
-            err_msg="Error in t1 & t2 simulation, "
-            "with t1={} and t2={}".format(t1, t2),
+            err_msg=f"Error in t1 & t2 simulation, with t1={t1} and t2={t2}",
         )
 
     def test_plot(self):
@@ -181,6 +174,40 @@ class TestCircuitProcessor:
         fig, _ = processor.plot_pulses(use_control_latex=False)
         # testing under Xvfb with pytest-xvfb complains if figure windows are
         # left open, so we politely close it:
+        plt.close(fig)
+
+    def test_plot_pulses_group_colors(self):
+        """
+        Each group of pulse labels gets its own color from the property cycle.
+
+        Regression test: matplotlib 3.11 changed the default property cycle to
+        yield RGB tuples rather than hex strings. A tuple passed as the third
+        positional argument of ax.plot is not a format string, so it is taken
+        as the x data of a further line instead of as a color, and every group
+        ends up drawn in the first color of the cycle.
+        """
+        plt = pytest.importorskip("matplotlib.pyplot")
+        from matplotlib.colors import to_rgba
+
+        tlist = np.linspace(0.0, 2 * np.pi, 20)
+        processor = Processor(num_qubits=1, spline_kind="cubic")
+        processor.add_control(sigmaz(), label="sz")
+        processor.add_control(sigmax(), label="sx")
+        processor.set_all_coeffs(
+            {
+                "sz": np.array([np.sin(t) for t in tlist]),
+                "sx": np.array([np.cos(t) for t in tlist]),
+            }
+        )
+        processor.set_all_tlist(tlist)
+
+        # One group per control, so each axis uses a different cycle color.
+        fig, axis = processor.plot_pulses(pulse_labels=[{"sz": "sz"}, {"sx": "sx"}])
+        color_list = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        for ax, expected in zip(axis, color_list):
+            # A stray line would mean the color was consumed as plot data.
+            assert len(ax.get_lines()) == 1
+            assert to_rgba(ax.get_lines()[0].get_color()) == to_rgba(expected)
         plt.close(fig)
 
     def testSpline(self):
@@ -230,19 +257,13 @@ class TestCircuitProcessor:
         processor.set_all_coeffs({"sz": coeff})
         processor.set_all_tlist(tlist)
 
-        unitary_qobjevo, _ = processor.get_qobjevo(
-            args={"test": True}, noisy=False
-        )
+        unitary_qobjevo, _ = processor.get_qobjevo(args={"test": True}, noisy=False)
         components = unitary_qobjevo.to_list()
-        assert_allclose(
-            components[0][0].data.to_array(), sigmaz().data.to_array()
-        )
+        assert_allclose(components[0][0].data.to_array(), sigmaz().data.to_array())
 
         # For v5: QobjEvo has no public .tlist attribute.
         # Instead, verify the time-dependence works by evaluating it at t=1.0.
-        assert_allclose(
-            unitary_qobjevo(1.0).data.to_array(), sigmaz().data.to_array()
-        )
+        assert_allclose(unitary_qobjevo(1.0).data.to_array(), sigmaz().data.to_array())
 
         # With Decoherence Noise
         dec_noise = DecoherenceNoise(c_ops=sigmax(), coeff=coeff, tlist=tlist)
@@ -254,9 +275,7 @@ class TestCircuitProcessor:
         )  # We index [0] to get the Hamiltonian before calling .to_list()
 
         # Check that sigmaz is present in the Hamiltonian components with noise
-        noisy_qobjevo, c_ops = processor.get_qobjevo(
-            args={"test": True}, noisy=True
-        )
+        noisy_qobjevo, c_ops = processor.get_qobjevo(args={"test": True}, noisy=True)
         hamiltonian_parts = [pair[0] for pair in noisy_qobjevo.to_list()]
         assert any(pair == sigmaz() for pair in hamiltonian_parts)
 
@@ -265,9 +284,7 @@ class TestCircuitProcessor:
         assert_equal(c_op_comp[0][0], sigmax())
 
         # For v5: Verify value at t=1.0 instead of checking .tlist attribute
-        assert_allclose(
-            c_ops[0](1.0).data.to_array(), sigmax().data.to_array()
-        )
+        assert_allclose(c_ops[0](1.0).data.to_array(), sigmax().data.to_array())
 
         # With Amplitude Noise
         processor = Processor(num_qubits=1, spline_kind="cubic")
@@ -282,9 +299,7 @@ class TestCircuitProcessor:
         amp_noise = ControlAmpNoise(coeff=coeff, tlist=tlist)
         processor.add_noise(amp_noise)
 
-        noisy_qobjevo, c_ops = processor.get_qobjevo(
-            args={"test": True}, noisy=True
-        )
+        noisy_qobjevo, c_ops = processor.get_qobjevo(args={"test": True}, noisy=True)
 
         # We verify the total physical value: (Signal + Noise).
         # At t = tlist[0], the total coefficient should be:
@@ -349,9 +364,7 @@ class TestCircuitProcessor:
         """
         N = 2
         proc = Processor(num_qubits=N, dims=[2, 3])
-        proc.add_control(
-            tensor(sigmaz(), rand_dm(3, density=1.0)), label="sz0"
-        )
+        proc.add_control(tensor(sigmaz(), rand_dm(3, density=1.0)), label="sz0")
         proc.set_all_coeffs({"sz0": np.array([1, 2])})
         proc.set_all_tlist(np.array([0.0, 1.0, 2]))
         proc.run_state(init_state=tensor([basis(2, 0), basis(3, 1)]))
@@ -384,13 +397,13 @@ class TestCircuitProcessor:
         proc.add_control(sigmax(), targets=1, label="sx")
         proc.set_all_coeffs({"sx": np.array([1.0] * len(tlist))})
         proc.set_all_tlist(tlist)
-        observerable = tensor([qutip.qeye(2), qutip.sigmax()])
+        observable = tensor([qutip.qeye(2), qutip.sigmax()])
         result1 = proc.run_state(
-            init_state=init_state, solver="mcsolve", e_ops=observerable
+            init_state=init_state, solver="mcsolve", e_ops=observable
         )
         assert result1.solver == "mcsolve"
 
-    def test_no_saving_intermidiate_state(self):
+    def test_no_saving_intermediate_state(self):
         processor = Processor(1)
         processor.add_pulse(
             pulse=Pulse(
@@ -432,9 +445,9 @@ class TestCircuitProcessor:
         # If no max_step are defined,
         # the solver will choose a step size too large
         # such that the X gate will be skipped.
-        qc.add_gate("ISWAP", targets=[0, 1])
-        qc.add_gate("ISWAP", targets=[0, 1])
-        qc.add_gate("X", targets=[0])
+        qc.add_gate(ISWAP, targets=[0, 1])
+        qc.add_gate(ISWAP, targets=[0, 1])
+        qc.add_gate(X, targets=[0])
         processor = LinearSpinChain(num_qubits)
         processor.load_circuit(qc)
 

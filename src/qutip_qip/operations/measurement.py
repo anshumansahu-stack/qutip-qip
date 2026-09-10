@@ -1,55 +1,53 @@
-from collections.abc import Iterable
-import numbers
-
 import numpy as np
-
+import warnings
 import qutip
-from qutip import basis
+from abc import ABC, ABCMeta, abstractmethod
+from qutip import basis, Qobj
 from qutip.measurement import measurement_statistics
 from qutip_qip.operations import expand_operator
 
+__all__ = ["Mz", "Mx", "My"]
 
-class Measurement:
+
+class _MeasurementMetaClass(ABCMeta):
+    def __repr__(cls) -> str:
+        name = getattr(cls, "name", cls.__name__)
+        return f"Measurement({name})"
+
+    def __str__(cls) -> str:
+        return repr(cls)
+
+
+class Measurement(ABC, metaclass=_MeasurementMetaClass):
     """
-    Representation of a quantum measurement, with its required parameters,
-    and target qubits.
-
-    Parameters
-    ----------
-    name : string
-        Measurement name.
-    targets : list or int
-        Gate targets.
-    classical_store : int
-        Result of the measurment is stored in this
-        classical register of the circuit.
+    Base class for quantum measurements.
     """
 
-    def __init__(self, name, targets=None, index=None, classical_store=None):
+    name = "M"
+    num_qubits = 1
+
+    def __init__(self, *args, **kwargs) -> None:
+        if type(self) is Measurement:
+            warnings.warn(
+                "Direct instantiation of Measurement() is deprecated and will "
+                "be removed in future versions. Please use a specific subclass "
+                "like 'Mz' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+    @abstractmethod
+    def get_measurement_ops(self) -> list[Qobj]:
         """
-        Create a measurement with specified parameters.
+        Returns a list of Kraus operators representing the measurement.
         """
+        pass
 
-        self.name = name
-        self.targets = None
-        self.classical_store = classical_store
-        self.index = index
-
-        if not isinstance(targets, Iterable) and targets is not None:
-            self.targets = [targets]
-        else:
-            self.targets = targets
-
-        for ind_list in [self.targets]:
-            if isinstance(ind_list, Iterable):
-                all_integer = all(
-                    [isinstance(ind, numbers.Integral) for ind in ind_list]
-                )
-                if not all_integer:
-                    raise ValueError("Index of a qubit must be an integer")
-
-    def measurement_comp_basis(self, state):
+    @classmethod
+    def measurement_comp_basis(cls, state, qubits):
         """
+        DEPRECATED: Old method for computational basis meaasurement.
+
         Measures a particular qubit (determined by the target)
         whose ket vector/ density matrix is specified in the
         computational basis and returns collapsed_states and probabilities
@@ -60,6 +58,8 @@ class Measurement:
         state : ket or oper
                 state to be measured on specified by
                 ket vector or density matrix
+        qubits : list or tuple of int
+                The indices of the qubits to be measured.
 
         Returns
         -------
@@ -71,9 +71,15 @@ class Measurement:
                         the probability of measuring a state in a the state
                         specified by the index.
         """
-
+        warnings.warn(
+            "'measurement_comp_basis' has been deprecated and will be removed "
+            "in future versions. Please use 'get_measurement_ops()' combined "
+            "with simulator logic.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         n = int(np.log2(state.shape[0]))
-        target = self.targets[0]
+        target = qubits[0]
         if target < n:
             op0 = basis(2, 0) * basis(2, 0).dag()
             op1 = basis(2, 1) * basis(2, 1).dag()
@@ -82,47 +88,51 @@ class Measurement:
             raise ValueError("target is not valid")
 
         measurement_ops = [
-            expand_operator(op, dims=[2] * n, targets=self.targets)
-            for op in measurement_ops
+            expand_operator(op, dims=[2] * n, targets=qubits) for op in measurement_ops
         ]
 
         measurement_tol = qutip.settings.core["atol"] ** 2
         states, probabilities = measurement_statistics(state, measurement_ops)
-        probabilities = [
-            p if p > measurement_tol else 0.0 for p in probabilities
-        ]
+        probabilities = [p if p > measurement_tol else 0.0 for p in probabilities]
         states = [
-            s if p > measurement_tol else None
-            for s, p in zip(states, probabilities)
+            s if p > measurement_tol else None for s, p in zip(states, probabilities)
         ]
         return states, probabilities
 
     def __str__(self):
-        str_name = ("Measurement(%s, target=%s, classical_store=%s)") % (
-            self.name,
-            self.targets,
-            self.classical_store,
-        )
-        return str_name
+        if self.name:
+            return f"Measurement({self.name})"
+        return "Measurement"
 
     def __repr__(self):
         return str(self)
 
-    def _repr_latex_(self):
-        return str(self)
 
-    def _to_qasm(self, qasm_out):
-        """
-        Pipe output of measurement to QasmOutput object.
+class Mz(Measurement):
+    name = "Mz"
+    num_qubits = 1
 
-        Parameters
-        ----------
-        qasm_out: QasmOutput
-            object to store QASM output.
-        """
+    def get_measurement_ops(self) -> list[Qobj]:
+        op0 = basis(2, 0) * basis(2, 0).dag()
+        op1 = basis(2, 1) * basis(2, 1).dag()
+        return [op0, op1]
 
-        qasm_out.output(
-            "measure q[{}] -> c[{}]".format(
-                self.targets[0], self.classical_store
-            )
-        )
+
+class Mx(Measurement):
+    name = "Mx"
+    num_qubits = 1
+
+    def get_measurement_ops(self) -> list[Qobj]:
+        plus = (basis(2, 0) + basis(2, 1)).unit()
+        minus = (basis(2, 0) - basis(2, 1)).unit()
+        return [plus * plus.dag(), minus * minus.dag()]
+
+
+class My(Measurement):
+    name = "My"
+    num_qubits = 1
+
+    def get_measurement_ops(self) -> list[Qobj]:
+        plus_y = (basis(2, 0) + 1j * basis(2, 1)).unit()
+        minus_y = (basis(2, 0) - 1j * basis(2, 1)).unit()
+        return [plus_y * plus_y.dag(), minus_y * minus_y.dag()]

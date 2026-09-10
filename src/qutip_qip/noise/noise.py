@@ -1,8 +1,9 @@
 import warnings
+
 from qutip_qip.pulse import Pulse
 
 
-class Noise(object):
+class Noise:
     """
     The base class representing noise in a processor.
     The noise object can be added to :class:`.device.Processor` and
@@ -23,21 +24,18 @@ class Noise(object):
 
         Parameters
         ----------
-        dims: list, optional
+        dims : list of int, optional
             The dimension of the components system, the default value is
-            [2,2...,2] for qubits system.
-
-        pulses : list of :class:`.Pulse`
+            [2, 2, ..., 2] for qubits system.
+        pulses : list of :class:`.Pulse`, optional
             The input pulses. The noise will be added to pulses in this list.
-
-        systematic_noise : :class:`.Pulse`
+        systematic_noise : :class:`.Pulse`, optional
             The dummy pulse with no ideal control element.
 
         Returns
         -------
-        noisy_pulses: list of :class:`.Pulse`
+        noisy_pulses : list of :class:`.Pulse`
             Noisy pulses.
-
         systematic_noise : :class:`.Pulse`
             The dummy pulse representing pulse-independent noise.
         """
@@ -53,8 +51,7 @@ class Noise(object):
             return self.get_noisy_dynamics(dims, pulses, systematic_noise)
 
         raise NotImplementedError(
-            "Subclass error needs a method"
-            "`get_noisy_pulses` to process the noise."
+            "Subclass error needs a method `get_noisy_pulses` to process the noise."
         )
 
     def _apply_noise(
@@ -80,8 +77,6 @@ class Noise(object):
         elif isinstance(result, list) and len(result) == len(pulses):
             pulses = result
         else:
-            raise TypeError(
-                "Returned value of get_noisy_pulses not understood."
-            )
+            raise TypeError("Returned value of get_noisy_pulses not understood.")
 
         return pulses, systematic_noise

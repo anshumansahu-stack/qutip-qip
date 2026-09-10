@@ -20,7 +20,7 @@ help:
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 create_tutorials:
-	python source/tutorials-website/create_tutorials_html.py
+	python source/tutorials-website/create_tutorials_rst.py
 
 #Modify the html target to include create_tutorials as a prerequisite
 html: create_tutorials
